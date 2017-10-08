@@ -49,11 +49,6 @@ class LSTM:
 		
 		
 		X = torch.cat( (h, x) )
- 		
-		# print("DEBUG FORWARD STEP: ")
-		# print("X :", X)
-		# print("Wz:", self.Wz)
-		# print("X @ Wz", X @ self.Wz)
 
 		z = self.activation_g(torch.mv(self.Wz, X) + self.bz)
 		i = self.activation_i(torch.mv(self.Wi, X) + self.bi)
@@ -62,17 +57,10 @@ class LSTM:
 		c_old = c.clone()
 		c = z * i + c_old * f
 		h = self.activation_g(c) * o
-		#print(h)
-
-
-
 
 		y = torch.mv(self.Wy, h) + self.by
 
-		#print("y:", y)
 		probs = softmax(y)
-		#print("softmax(y):", y)
-		#print("sum(softmax(y)):", torch.sum(y))
 
 		cache = (X, z, i, f, o, c_old)
 		return (probs, y, h, c, cache)
@@ -81,19 +69,16 @@ class LSTM:
 		X, z, i, f, o, c_old = cache
 		dh, dz, di, df, do, dc = d_next
 
-		#print("ULTIMATE DEBUG TIME. PRINT DIE MATRICES")
-
+		#get the error
 		dy = probs.clone()
 		dy -= y
 		
-		#print(dy)
-
-		#print("dWy vs. Wy vs. dy vs probs vs y")
+		#propage to hidden layer
 		dWy = torch.ger(dy, h)
-		#print(dWy, self.Wy, dy, probs, y)
 		dby = dy
 		dh = torch.t(self.Wy) @ dy + dh
 
+		#propagate error to gates
 		do = self.activation_di(o) * self.activation_g(c) * dh
 		dc = do * dh * self.activation_dg(c) + dc.clone()
 
@@ -103,9 +88,8 @@ class LSTM:
 
 		dz = i * dc * self.activation_dg(z)
 
-		#print(X, dz, "HIER KOMT dWz")
+		#propagate to input weights
 		dWz = torch.ger(dz, X)
-		#print(dWz)
 		dbz = dz
 		dxz = torch.t(self.Wz) @ dz
 
@@ -121,18 +105,14 @@ class LSTM:
 		dbo = do
 		dxo = torch.t(self.Wo) @ do
 
+		#propagate to hidden + 1 (for the next timestep)
 		dh = dxz + dxi + dxf + dxo
-		dh = dh[:self.D]
+		dh = dh[:self.D].clone()
 
 		dc = f * dc.clone()
 
 		d = (dh, dz, di, df, do, dc)
 
-
-		grad = [torch.cuda.FloatTensor(self.D, self.Z).zero_() for x in range(0,4)] + \
-					[torch.cuda.FloatTensor(self.N, self.D).zero_() for x in range(0,1)] + \
-					[torch.cuda.FloatTensor(self.D).zero_() for x in range(0,4)] + \
-					[torch.cuda.FloatTensor(self.N).zero_() for x in range(0,1)]
 		grad = (dWz, dWi, dWf, dWo, dWy, dbz, dbi, dbf, dbo, dby)
 
 		return grad, d
@@ -190,7 +170,6 @@ def train(lstm, batch):
 		results.append((probs, y_, h, c, cache))
 		loss += cross_entropy(y, probs)
 
-	#print(results[:][3])
 	loss /= len(batch)
 	grads = [torch.cuda.FloatTensor(lstm.D, lstm.Z).zero_() for x in range(0,4)] + \
 			[torch.cuda.FloatTensor(lstm.N, lstm.D).zero_() for x in range(0,1)] + \
@@ -205,7 +184,6 @@ def train(lstm, batch):
 		probs, y_, h, c, cache = results[il]
 		grad, d_next = lstm.backward(probs, y_, y, h, c, cache, d_next)
 
-		#print("Input was ", char, "expected out was", batch[il+1])
 		for i in range(0, len(grads)):
 			grads[i] += grad[i]
 
@@ -264,8 +242,6 @@ print("Init LSTM")
 x = LSTM(vocab_size, 64)
 print("Training")
 
-
-#data = "abcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh"
 training(x, data, 25000)
 print("Sample incoming")
 print(sample(x))
